@@ -1,0 +1,976 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Laptop, Monitor, Server, Cpu, HardDrive, Plus, Search, Edit3, Trash2, 
+  Download, Upload, ArrowUpRight, ArrowDownLeft, History, Users, RefreshCw, 
+  CheckCircle, AlertTriangle, Wrench, ShieldOff, FileSpreadsheet, X, Filter,
+  Building, Calendar, Hash, Tag, FileText
+} from 'lucide-react';
+
+export default function App() {
+  // --- MOCK DATA INICIAL ---
+  const initialAssets = [
+    {
+      id: '1',
+      code: 'AF-COMP-001',
+      serial: 'PF2K890A',
+      type: 'Laptop',
+      brandModel: 'Lenovo ThinkPad T14 Gen 3',
+      status: 'En uso',
+      assignedTo: 'Carlos Mendoza (Sistemas)',
+      entryDate: '2025-01-15',
+      notes: 'Entregada con cargador de 65W y funda.'
+    },
+    {
+      id: '2',
+      code: 'AF-COMP-002',
+      serial: 'C02G4120MD6M',
+      type: 'Laptop',
+      brandModel: 'MacBook Pro 16" M2',
+      status: 'En uso',
+      assignedTo: 'Ana Valenzuela (Diseño)',
+      entryDate: '2025-02-10',
+      notes: 'Incluye adaptador USB-C Hub.'
+    },
+    {
+      id: '3',
+      code: 'AF-MON-001',
+      serial: 'CN-0P829M-74261',
+      type: 'Monitor',
+      brandModel: 'Dell UltraSharp 27" U2722D',
+      status: 'En almacén',
+      assignedTo: 'Almacén Central',
+      entryDate: '2025-03-01',
+      notes: 'Disponible para nuevas asignaciones.'
+    },
+    {
+      id: '4',
+      code: 'AF-SRV-001',
+      serial: '2M23040B12',
+      type: 'Servidor',
+      brandModel: 'HPE ProLiant DL380 Gen10',
+      status: 'En mantenimiento',
+      assignedTo: 'Infraestructura TI',
+      entryDate: '2024-11-20',
+      notes: 'En revisión de fuente de poder por garantía.'
+    },
+    {
+      id: '5',
+      code: 'AF-DESK-001',
+      serial: 'MXL94321AB',
+      type: 'Desktop',
+      brandModel: 'HP EliteDesk 800 G6',
+      status: 'Dado de baja',
+      assignedTo: 'N/A',
+      entryDate: '2022-05-10',
+      notes: 'Tarjeta madre dañada, fuera de garantía.'
+    }
+  ];
+
+  const initialLogs = [
+    {
+      id: 'log-1',
+      timestamp: '2025-01-15 10:30',
+      assetCode: 'AF-COMP-001',
+      assetName: 'Lenovo ThinkPad T14 Gen 3',
+      type: 'Salida / Asignación',
+      targetPerson: 'Carlos Mendoza (Sistemas)',
+      responsible: 'Admin TI',
+      notes: 'Asignación inicial por ingreso de personal.'
+    },
+    {
+      id: 'log-2',
+      timestamp: '2025-02-10 14:15',
+      assetCode: 'AF-COMP-002',
+      assetName: 'MacBook Pro 16" M2',
+      type: 'Salida / Asignación',
+      targetPerson: 'Ana Valenzuela (Diseño)',
+      responsible: 'Admin TI',
+      notes: 'Asignación para área creativa.'
+    },
+    {
+      id: 'log-3',
+      timestamp: '2025-03-01 09:00',
+      assetCode: 'AF-MON-001',
+      assetName: 'Dell UltraSharp 27" U2722D',
+      type: 'Entrada / Compra',
+      targetPerson: 'Almacén Central',
+      responsible: 'Compras TI',
+      notes: 'Ingreso al almacén de TI tras compra nueva.'
+    }
+  ];
+
+  // --- ESTADOS DE LA APLICACIÓN ---
+  const [assets, setAssets] = useState(() => {
+    try {
+      const saved = localStorage.getItem('af_computing_assets');
+      return saved ? JSON.parse(saved) : initialAssets;
+    } catch {
+      return initialAssets;
+    }
+  });
+
+  const [logs, setLogs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('af_computing_logs');
+      return saved ? JSON.parse(saved) : initialLogs;
+    } catch {
+      return initialLogs;
+    }
+  });
+
+  const [activeTab, setActiveTab] = useState('assets'); // 'assets', 'logs'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('Todos');
+  const [filterStatus, setFilterStatus] = useState('Todos');
+
+  // Modales
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+  const [editingAssetId, setEditingAssetId] = useState(null);
+  
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [selectedAssetForMove, setSelectedAssetForMove] = useState(null);
+
+  // Formulario Activo
+  const [assetFormData, setAssetFormData] = useState({
+    code: '',
+    serial: '',
+    type: 'Laptop',
+    brandModel: '',
+    status: 'En almacén',
+    assignedTo: 'Almacén Central',
+    entryDate: new Date().toISOString().split('T')[0],
+    notes: ''
+  });
+
+  // Formulario Movimiento
+  const [moveFormData, setMoveFormData] = useState({
+    movementType: 'Asignación a Usuario', // Asignación, Devolución, Mantenimiento, Baja
+    recipientOrLocation: '',
+    notes: ''
+  });
+
+  const [notification, setNotification] = useState(null);
+
+  // --- PERSISTENCIA ---
+  useEffect(() => {
+    localStorage.setItem('af_computing_assets', JSON.stringify(assets));
+  }, [assets]);
+
+  useEffect(() => {
+    localStorage.setItem('af_computing_logs', JSON.stringify(logs));
+  }, [logs]);
+
+  // Auxiliar Notificaciones
+  const notify = (msg, type = 'success') => {
+    setNotification({ msg, type });
+    setTimeout(() => setNotification(null), 3500);
+  };
+
+  // --- MÉTRICAS Y DADSBOARD ---
+  const metrics = useMemo(() => {
+    const total = assets.length;
+    const inUse = assets.filter(a => a.status === 'En uso').length;
+    const inStock = assets.filter(a => a.status === 'En almacén').length;
+    const inMaintenance = assets.filter(a => a.status === 'En mantenimiento').length;
+    const decommissioned = assets.filter(a => a.status === 'Dado de baja').length;
+    return { total, inUse, inStock, inMaintenance, decommissioned };
+  }, [assets]);
+
+  // --- FILTRADO DE ACTIVOS ---
+  const filteredAssets = useMemo(() => {
+    return assets.filter(item => {
+      const query = searchTerm.toLowerCase();
+      const matchesSearch = 
+        item.code.toLowerCase().includes(query) ||
+        item.serial.toLowerCase().includes(query) ||
+        item.brandModel.toLowerCase().includes(query) ||
+        item.assignedTo.toLowerCase().includes(query);
+
+      const matchesType = filterType === 'Todos' || item.type === filterType;
+      const matchesStatus = filterStatus === 'Todos' || item.status === filterStatus;
+
+      return matchesSearch && matchesType && matchesStatus;
+    });
+  }, [assets, searchTerm, filterType, filterStatus]);
+
+  // --- CREAR / EDITAR ACTIVO ---
+  const handleOpenCreateAsset = () => {
+    setEditingAssetId(null);
+    const nextNum = (assets.length + 1).toString().padStart(3, '0');
+    setAssetFormData({
+      code: `AF-COMP-${nextNum}`,
+      serial: '',
+      type: 'Laptop',
+      brandModel: '',
+      status: 'En almacén',
+      assignedTo: 'Almacén Central',
+      entryDate: new Date().toISOString().split('T')[0],
+      notes: ''
+    });
+    setIsAssetModalOpen(true);
+  };
+
+  const handleOpenEditAsset = (asset) => {
+    setEditingAssetId(asset.id);
+    setAssetFormData({ ...asset });
+    setIsAssetModalOpen(true);
+  };
+
+  const handleSaveAsset = (e) => {
+    e.preventDefault();
+    if (!assetFormData.code || !assetFormData.serial || !assetFormData.brandModel) {
+      notify('Por favor completa la Placa, Serie y Modelo.', 'error');
+      return;
+    }
+
+    if (editingAssetId) {
+      setAssets(prev => prev.map(a => a.id === editingAssetId ? { ...assetFormData, id: editingAssetId } : a));
+      notify('Activo actualizado exitosamente.');
+    } else {
+      const newAsset = { ...assetFormData, id: Date.now().toString() };
+      setAssets(prev => [newAsset, ...prev]);
+      
+      // Log automático de alta
+      const logEntry = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toLocaleString(),
+        assetCode: newAsset.code,
+        assetName: newAsset.brandModel,
+        type: 'Entrada / Registro Nuevo',
+        targetPerson: newAsset.assignedTo || 'Almacén Central',
+        responsible: 'Administrador TI',
+        notes: `Alta inicial en el inventario. ${newAsset.notes}`
+      };
+      setLogs(prev => [logEntry, ...prev]);
+
+      notify('Nuevo equipo de cómputo registrado.');
+    }
+    setIsAssetModalOpen(false);
+  };
+
+  const handleDeleteAsset = (id, code) => {
+    if (window.confirm(`¿Estás seguro de eliminar permanentemente el activo ${code}?`)) {
+      setAssets(prev => prev.filter(a => a.id !== id));
+      notify(`Activo ${code} eliminado.`, 'info');
+    }
+  };
+
+  // --- CONTROL DE MOVIMIENTOS (ENTRADAS / SALIDAS) ---
+  const handleOpenMovementModal = (asset) => {
+    setSelectedAssetForMove(asset);
+    setMoveFormData({
+      movementType: asset.status === 'En uso' ? 'Devolución a Almacén' : 'Asignación a Usuario',
+      recipientOrLocation: '',
+      notes: ''
+    });
+    setIsMoveModalOpen(true);
+  };
+
+  const handleSaveMovement = (e) => {
+    e.preventDefault();
+    if (!selectedAssetForMove) return;
+
+    let newStatus = selectedAssetForMove.status;
+    let newAssignedTo = selectedAssetForMove.assignedTo;
+    let logType = moveFormData.movementType;
+
+    switch (moveFormData.movementType) {
+      case 'Asignación a Usuario':
+        if (!moveFormData.recipientOrLocation.trim()) {
+          notify('Debes especificar la persona o departamento receptor.', 'error');
+          return;
+        }
+        newStatus = 'En uso';
+        newAssignedTo = moveFormData.recipientOrLocation;
+        logType = 'Salida / Asignación';
+        break;
+      case 'Devolución a Almacén':
+        newStatus = 'En almacén';
+        newAssignedTo = 'Almacén Central';
+        logType = 'Entrada / Devolución';
+        break;
+      case 'Envío a Mantenimiento':
+        newStatus = 'En mantenimiento';
+        newAssignedTo = moveFormData.recipientOrLocation || 'Proveedor de Soporte';
+        logType = 'Salida / Mantenimiento';
+        break;
+      case 'Retorno de Mantenimiento':
+        newStatus = 'En almacén';
+        newAssignedTo = 'Almacén Central';
+        logType = 'Entrada / Retorno Taller';
+        break;
+      case 'Baja Definitiva':
+        newStatus = 'Dado de baja';
+        newAssignedTo = 'Desincorporado';
+        logType = 'Salida / Baja Definitiva';
+        break;
+      default:
+        break;
+    }
+
+    // Actualizar Activo
+    setAssets(prev => prev.map(a => {
+      if (a.id === selectedAssetForMove.id) {
+        return {
+          ...a,
+          status: newStatus,
+          assignedTo: newAssignedTo
+        };
+      }
+      return a;
+    }));
+
+    // Agregar Bitácora
+    const newLog = {
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toLocaleString(),
+      assetCode: selectedAssetForMove.code,
+      assetName: selectedAssetForMove.brandModel,
+      type: logType,
+      targetPerson: newAssignedTo,
+      responsible: 'Administrador TI',
+      notes: moveFormData.notes || 'Movimiento procesado correctamente.'
+    };
+
+    setLogs(prev => [newLog, ...prev]);
+    notify(`Movimiento registrado para ${selectedAssetForMove.code}`);
+    setIsMoveModalOpen(false);
+  };
+
+  // --- EXPORTAR Y IMPORTAR ---
+  const handleExportJSON = () => {
+    const backupData = { assets, logs, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Activos_Computo_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    notify('Respaldo JSON descargado.');
+  };
+
+  const handleImportJSON = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target.result);
+        if (data.assets && Array.isArray(data.assets)) {
+          setAssets(data.assets);
+          if (data.logs && Array.isArray(data.logs)) setLogs(data.logs);
+          notify('Datos de inventario e historial importados correctamente.');
+        } else if (Array.isArray(data)) {
+          setAssets(data);
+          notify('Lista de activos importada.');
+        } else {
+          notify('Formato JSON no compatible.', 'error');
+        }
+      } catch {
+        notify('Error al leer el archivo JSON.', 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleExportCSV = () => {
+    if (assets.length === 0) {
+      notify('No hay datos para exportar.', 'error');
+      return;
+    }
+
+    const headers = ['Placa Activo', 'Numero Serie', 'Tipo', 'Marca / Modelo', 'Estado', 'Asignado A', 'Fecha Alta', 'Observaciones'];
+    const rows = assets.map(a => [
+      `"${a.code}"`,
+      `"${a.serial}"`,
+      `"${a.type}"`,
+      `"${a.brandModel}"`,
+      `"${a.status}"`,
+      `"${a.assignedTo}"`,
+      `"${a.entryDate}"`,
+      `"${a.notes || ''}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Catalogo_Activos_Fijos_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    notify('Catálogo exportado a CSV.');
+  };
+
+  // Helper de Iconos de Tipo
+  const getTypeIcon = (type) => {
+    switch (type) {
+      case 'Laptop': return <Laptop className="w-4 h-4" />;
+      case 'Desktop': return <Cpu className="w-4 h-4" />;
+      case 'Monitor': return <Monitor className="w-4 h-4" />;
+      case 'Servidor': return <Server className="w-4 h-4" />;
+      default: return <HardDrive className="w-4 h-4" />;
+    }
+  };
+
+  // Helper de Badge de Estado
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'En uso':
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><CheckCircle className="w-3.5 h-3.5" /> En uso</span>;
+      case 'En almacén':
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200"><Building className="w-3.5 h-3.5" /> En almacén</span>;
+      case 'En mantenimiento':
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"><Wrench className="w-3.5 h-3.5" /> Mantenimiento</span>;
+      case 'Dado de baja':
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200"><ShieldOff className="w-3.5 h-3.5" /> Dado de baja</span>;
+      default:
+        return <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">{status}</span>;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white pb-12">
+      
+      {/* HEADER SUPERIOR */}
+      <header className="bg-slate-800/80 backdrop-blur border-b border-slate-700/80 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20 text-white">
+              <Laptop className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="font-bold text-lg leading-none text-white tracking-wide">Activos TI Pro</h1>
+              <span className="text-xs text-slate-400 font-medium">Control de Equipo de Cómputo</span>
+            </div>
+          </div>
+
+          {/* ACCIONES GLOBALES DE IMPORTAR/EXPORTAR */}
+          <div className="flex items-center space-x-2">
+            <label className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer transition border border-slate-600">
+              <Upload className="w-4 h-4 text-indigo-400" />
+              <span className="hidden sm:inline">Importar</span>
+              <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
+            </label>
+
+            <button 
+              onClick={handleExportJSON}
+              className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-xl text-xs font-medium transition border border-slate-600"
+              title="Guardar archivo JSON de respaldo"
+            >
+              <Download className="w-4 h-4 text-indigo-400" />
+              <span className="hidden sm:inline">JSON</span>
+            </button>
+
+            <button 
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs font-medium transition"
+              title="Exportar a Hoja de Cálculo Excel/CSV"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              <span className="hidden sm:inline">CSV</span>
+            </button>
+
+            <button 
+              onClick={handleOpenCreateAsset}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/30 transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Equipo</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* CONTENIDO PRINCIPAL */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+        
+        {/* NOTIFICACIÓN FLOTANTE */}
+        {notification && (
+          <div className={`p-4 rounded-xl flex items-center justify-between border shadow-lg animate-in fade-in slide-in-from-top-2 duration-200 ${
+            notification.type === 'error' ? 'bg-rose-950/80 border-rose-800 text-rose-200' :
+            notification.type === 'info' ? 'bg-sky-950/80 border-sky-800 text-sky-200' :
+            'bg-emerald-950/80 border-emerald-800 text-emerald-200'
+          }`}>
+            <span className="text-sm font-medium">{notification.msg}</span>
+            <button onClick={() => setNotification(null)} className="text-slate-400 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* METRICAS Y DASHBOARD */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
+          <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl flex flex-col justify-between">
+            <span className="text-xs text-slate-400 font-medium">Total Equipos</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-bold text-white">{metrics.total}</span>
+              <Laptop className="w-5 h-5 text-indigo-400" />
+            </div>
+          </div>
+
+          <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl flex flex-col justify-between">
+            <span className="text-xs text-emerald-400 font-medium">En Uso / Asignados</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-bold text-emerald-400">{metrics.inUse}</span>
+              <CheckCircle className="w-5 h-5 text-emerald-400" />
+            </div>
+          </div>
+
+          <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl flex flex-col justify-between">
+            <span className="text-xs text-blue-400 font-medium">En Almacén</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-bold text-blue-400">{metrics.inStock}</span>
+              <Building className="w-5 h-5 text-blue-400" />
+            </div>
+          </div>
+
+          <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl flex flex-col justify-between">
+            <span className="text-xs text-amber-400 font-medium">En Mantenimiento</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-bold text-amber-400">{metrics.inMaintenance}</span>
+              <Wrench className="w-5 h-5 text-amber-400" />
+            </div>
+          </div>
+
+          <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl flex flex-col justify-between col-span-2 md:col-span-1">
+            <span className="text-xs text-rose-400 font-medium">Dados de Baja</span>
+            <div className="flex items-baseline justify-between mt-2">
+              <span className="text-2xl font-bold text-rose-400">{metrics.decommissioned}</span>
+              <ShieldOff className="w-5 h-5 text-rose-400" />
+            </div>
+          </div>
+        </div>
+
+        {/* NAVEGACIÓN TABULAR DE NIVELES */}
+        <div className="flex border-b border-slate-700/80 space-x-6">
+          <button
+            onClick={() => setActiveTab('assets')}
+            className={`pb-3 text-sm font-semibold flex items-center space-x-2 border-b-2 transition ${
+              activeTab === 'assets' 
+                ? 'border-indigo-500 text-indigo-400' 
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Laptop className="w-4 h-4" />
+            <span>Inventario de Activos</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={`pb-3 text-sm font-semibold flex items-center space-x-2 border-b-2 transition ${
+              activeTab === 'logs' 
+                ? 'border-indigo-500 text-indigo-400' 
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>Bitácora de Movimientos ({logs.length})</span>
+          </button>
+        </div>
+
+        {/* VISTA 1: CATÁLOGO DE ACTIVOS FIJOS */}
+        {activeTab === 'assets' && (
+          <div className="space-y-4">
+            
+            {/* BARRA DE BÚSQUEDA Y FILTROS */}
+            <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/60 flex flex-col md:flex-row gap-3 justify-between items-center">
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar por placa, serie, modelo o usuario..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-slate-900/90 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                {/* Filtro Tipo */}
+                <div className="flex items-center space-x-1.5 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-700 text-xs">
+                  <Filter className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-slate-400">Tipo:</span>
+                  <select 
+                    value={filterType} 
+                    onChange={(e) => setFilterType(e.target.value)}
+                    className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+                  >
+                    <option value="Todos" className="bg-slate-800">Todos</option>
+                    <option value="Laptop" className="bg-slate-800">Laptop</option>
+                    <option value="Desktop" className="bg-slate-800">Desktop</option>
+                    <option value="Monitor" className="bg-slate-800">Monitor</option>
+                    <option value="Servidor" className="bg-slate-800">Servidor</option>
+                    <option value="Periférico" className="bg-slate-800">Periférico</option>
+                  </select>
+                </div>
+
+                {/* Filtro Estado */}
+                <div className="flex items-center space-x-1.5 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-700 text-xs">
+                  <span className="text-slate-400">Estado:</span>
+                  <select 
+                    value={filterStatus} 
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+                  >
+                    <option value="Todos" className="bg-slate-800">Todos</option>
+                    <option value="En uso" className="bg-slate-800">En uso</option>
+                    <option value="En almacén" className="bg-slate-800">En almacén</option>
+                    <option value="En mantenimiento" className="bg-slate-800">En mantenimiento</option>
+                    <option value="Dado de baja" className="bg-slate-800">Dado de baja</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* TABLA DE ACTIVOS */}
+            <div className="bg-slate-800/40 rounded-2xl border border-slate-700/60 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-800/80 text-slate-400 uppercase font-semibold border-b border-slate-700/80">
+                    <tr>
+                      <th className="py-3.5 px-4">Placa / Código</th>
+                      <th className="py-3.5 px-4">Equipo / Modelo</th>
+                      <th className="py-3.5 px-4">Nº Serie</th>
+                      <th className="py-3.5 px-4">Estado</th>
+                      <th className="py-3.5 px-4">Asignado a</th>
+                      <th className="py-3.5 px-4 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/40">
+                    {filteredAssets.length > 0 ? (
+                      filteredAssets.map(asset => (
+                        <tr key={asset.id} className="hover:bg-slate-700/30 transition">
+                          <td className="py-3 px-4 font-mono font-bold text-indigo-300">
+                            {asset.code}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center space-x-2">
+                              <span className="p-1.5 bg-slate-700 rounded-lg text-indigo-400">
+                                {getTypeIcon(asset.type)}
+                              </span>
+                              <div>
+                                <p className="font-semibold text-white">{asset.brandModel}</p>
+                                <p className="text-[10px] text-slate-400">{asset.type}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-300">
+                            {asset.serial}
+                          </td>
+                          <td className="py-3 px-4">
+                            {getStatusBadge(asset.status)}
+                          </td>
+                          <td className="py-3 px-4 font-medium text-slate-200">
+                            {asset.assignedTo}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center space-x-1.5">
+                              {/* Botón Movimiento Rápido */}
+                              <button 
+                                onClick={() => handleOpenMovementModal(asset)}
+                                className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 rounded-lg text-[11px] font-semibold transition flex items-center space-x-1"
+                                title="Registrar Entrada/Salida o Asignación"
+                              >
+                                <ArrowUpRight className="w-3 h-3" />
+                                <span>Movimiento</span>
+                              </button>
+
+                              {/* Botón Editar */}
+                              <button 
+                                onClick={() => handleOpenEditAsset(asset)}
+                                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition"
+                                title="Editar detalles"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Botón Eliminar */}
+                              <button 
+                                onClick={() => handleDeleteAsset(asset.id, asset.code)}
+                                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-700 rounded-lg transition"
+                                title="Eliminar registro"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="6" className="py-12 text-center text-slate-500">
+                          No se encontraron activos con los criterios de búsqueda.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VISTA 2: HISTORIAL Y BITÁCORA DE MOVIMIENTOS */}
+        {activeTab === 'logs' && (
+          <div className="bg-slate-800/40 rounded-2xl border border-slate-700/60 overflow-hidden">
+            <div className="p-4 bg-slate-800/80 border-b border-slate-700/80 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-bold text-white">Historial Auditado de Entradas y Salidas</h3>
+                <p className="text-xs text-slate-400">Registro cronológico de asignaciones, devoluciones y mantenimiento</p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-800/40 text-slate-400 uppercase font-semibold border-b border-slate-700/80">
+                  <tr>
+                    <th className="py-3 px-4">Fecha y Hora</th>
+                    <th className="py-3 px-4">Placa / Equipo</th>
+                    <th className="py-3 px-4">Tipo de Movimiento</th>
+                    <th className="py-3 px-4">Destino / Responsable</th>
+                    <th className="py-3 px-4">Observaciones / Notas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/40">
+                  {logs.map(log => (
+                    <tr key={log.id} className="hover:bg-slate-700/20 transition">
+                      <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">
+                        {log.timestamp}
+                      </td>
+                      <td className="py-3 px-4">
+                        <p className="font-mono font-bold text-indigo-300">{log.assetCode}</p>
+                        <p className="text-[10px] text-slate-400">{log.assetName}</p>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold ${
+                          log.type.includes('Salida') ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        }`}>
+                          {log.type.includes('Salida') ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownLeft className="w-3 h-3" />}
+                          {log.type}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-medium text-slate-200">
+                        {log.targetPerson}
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 max-w-xs truncate">
+                        {log.notes}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* MODAL: REGISTRAR / EDITAR ACTIVO */}
+      {isAssetModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80">
+              <h3 className="font-bold text-white text-sm">
+                {editingAssetId ? 'Editar Activo de Cómputo' : 'Registrar Nuevo Equipo de Cómputo'}
+              </h3>
+              <button onClick={() => setIsAssetModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAsset} className="p-5 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Código / Placa Activo *</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={assetFormData.code}
+                    onChange={(e) => setAssetFormData({ ...assetFormData, code: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                    placeholder="AF-COMP-001"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Número de Serie *</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={assetFormData.serial}
+                    onChange={(e) => setAssetFormData({ ...assetFormData, serial: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                    placeholder="PF2K890A"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Tipo de Equipo</label>
+                  <select
+                    value={assetFormData.type}
+                    onChange={(e) => setAssetFormData({ ...assetFormData, type: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="Laptop">Laptop</option>
+                    <option value="Desktop">Desktop</option>
+                    <option value="Monitor">Monitor</option>
+                    <option value="Servidor">Servidor</option>
+                    <option value="Periférico">Periférico / Accesorio</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Marca / Modelo *</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={assetFormData.brandModel}
+                    onChange={(e) => setAssetFormData({ ...assetFormData, brandModel: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="Lenovo ThinkPad T14"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Estado Inicial</label>
+                  <select
+                    value={assetFormData.status}
+                    onChange={(e) => setAssetFormData({ ...assetFormData, status: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="En almacén">En almacén</option>
+                    <option value="En uso">En uso</option>
+                    <option value="En mantenimiento">En mantenimiento</option>
+                    <option value="Dado de baja">Dado de baja</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">Asignado a / Ubicación</label>
+                  <input 
+                    type="text" 
+                    value={assetFormData.assignedTo}
+                    onChange={(e) => setAssetFormData({ ...assetFormData, assignedTo: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="ej. Almacén Central o Juan Pérez"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Observaciones / Especificaciones</label>
+                <textarea 
+                  rows="2"
+                  value={assetFormData.notes}
+                  onChange={(e) => setAssetFormData({ ...assetFormData, notes: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  placeholder="Detalles de hardware, accesorios o garantía..."
+                ></textarea>
+              </div>
+
+              <div className="pt-3 border-t border-slate-700 flex justify-end space-x-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsAssetModalOpen(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl font-medium transition"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold shadow-md transition"
+                >
+                  Guardar Registro
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REGISTRAR ENTRADA / SALIDA */}
+      {isMoveModalOpen && selectedAssetForMove && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80">
+              <div>
+                <h3 className="font-bold text-white text-sm">Registrar Movimiento de Activo</h3>
+                <p className="text-[11px] text-indigo-400 font-mono">{selectedAssetForMove.code} - {selectedAssetForMove.brandModel}</p>
+              </div>
+              <button onClick={() => setIsMoveModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMovement} className="p-5 space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Tipo de Movimiento *</label>
+                <select
+                  value={moveFormData.movementType}
+                  onChange={(e) => setMoveFormData({ ...moveFormData, movementType: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Asignación a Usuario">Salida: Asignar a Colaborador</option>
+                  <option value="Devolución a Almacén">Entrada: Devolución a Almacén</option>
+                  <option value="Envío a Mantenimiento">Salida: Envío a Reparación / Soporte</option>
+                  <option value="Retorno de Mantenimiento">Entrada: Retorno de Mantenimiento</option>
+                  <option value="Baja Definitiva">Salida: Baja Definitiva / Desecho</option>
+                </select>
+              </div>
+
+              {(moveFormData.movementType === 'Asignación a Usuario' || moveFormData.movementType === 'Envío a Mantenimiento') && (
+                <div>
+                  <label className="block text-slate-400 font-medium mb-1">
+                    {moveFormData.movementType === 'Asignación a Usuario' ? 'Nombre del Colaborador / Depto *' : 'Taller / Proveedor de Servicio'}
+                  </label>
+                  <input 
+                    type="text" 
+                    required
+                    value={moveFormData.recipientOrLocation}
+                    onChange={(e) => setMoveFormData({ ...moveFormData, recipientOrLocation: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    placeholder="ej. María López (Marketing)"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Motivo / Notas del Movimiento</label>
+                <textarea 
+                  rows="3"
+                  value={moveFormData.notes}
+                  onChange={(e) => setMoveFormData({ ...moveFormData, notes: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  placeholder="Detalles del motivo del cambio de estado..."
+                ></textarea>
+              </div>
+
+              <div className="pt-3 border-t border-slate-700 flex justify-end space-x-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsMoveModalOpen(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl font-medium transition"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold shadow-md transition"
+                >
+                  Confirmar Movimiento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
